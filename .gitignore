@@ -173,3 +173,6 @@ output/
 wandb/
 swanlog/
 generated_predictions.jsonl
+
+# 在这里添加不需要跟踪的文件夹和文件
+data/tongue_data/
