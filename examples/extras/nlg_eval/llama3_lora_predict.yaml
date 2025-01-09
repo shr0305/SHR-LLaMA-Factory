@@ -2,28 +2,34 @@
 # For faster inference, we recommend to use `scripts/vllm_infer.py`.
 
 ### model
-model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
-adapter_name_or_path: saves/llama3-8b/lora/sft
+model_name_or_path: /home/quanzhong/internlm2-chat-7b
+adapter_name_or_path: saves/internlm2-chat-7b/1_4/train
 trust_remote_code: true
 
 ### method
 stage: sft
 do_predict: true
 finetuning_type: lora
+flash_attn: auto
+quantization_method: bitsandbytes
+temperature: 0.95
+top_p: 0.7
 
 ### dataset
-eval_dataset: identity,alpaca_en_demo
-template: llama3
+dataset_dir: data
+eval_dataset: new_test
+template: intern2
 cutoff_len: 2048
-max_samples: 50
-overwrite_cache: true
+max_new_tokens: 2048
+max_samples: 10000
+# overwrite_cache: true
 preprocessing_num_workers: 16
 
 ### output
-output_dir: saves/llama3-8b/lora/predict
-overwrite_output_dir: true
+output_dir: saves/internlm2-chat-7b/1_4/test
+# overwrite_output_dir: true
 
 ### eval
-per_device_eval_batch_size: 1
+per_device_eval_batch_size: 2
 predict_with_generate: true
-ddp_timeout: 180000000
+# ddp_timeout: 180000000

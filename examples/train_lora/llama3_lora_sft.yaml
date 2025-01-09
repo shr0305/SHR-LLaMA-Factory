@@ -1,40 +1,53 @@
 ### model
-model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+model_name_or_path: /home/quanzhong/internlm2-chat-7b
 trust_remote_code: true
 
 ### method
 stage: sft
 do_train: true
 finetuning_type: lora
+flash_attn: auto
 lora_target: all
+lora_alpha: 16
+lora_dropout: 0
+lora_rank: 8
+max_grad_norm: 1.0
 
 ### dataset
-dataset: identity,alpaca_en_demo
-template: llama3
+dataset_dir: data
+dataset: my_train
+template: intern2
 cutoff_len: 2048
-max_samples: 1000
+max_samples: 10000
 overwrite_cache: true
 preprocessing_num_workers: 16
 
 ### output
-output_dir: saves/llama3-8b/lora/sft
-logging_steps: 10
-save_steps: 500
+output_dir: saves/internlm2-chat-7b/1_4/train
+logging_steps: 5
+save_steps: 100
 plot_loss: true
 overwrite_output_dir: true
+report_to: all
 
 ### train
 per_device_train_batch_size: 1
-gradient_accumulation_steps: 8
-learning_rate: 1.0e-4
-num_train_epochs: 3.0
+gradient_accumulation_steps: 2
+learning_rate: 5.0e-5
+num_train_epochs: 5.0
 lr_scheduler_type: cosine
-warmup_ratio: 0.1
+warmup_steps: 10
 bf16: true
 ddp_timeout: 180000000
+optim: adamw_torch
 
 ### eval
-val_size: 0.1
-per_device_eval_batch_size: 1
-eval_strategy: steps
-eval_steps: 500
+# val_size: 0.1
+# per_device_eval_batch_size: 1
+# eval_strategy: steps
+# eval_steps: 500
+
+### swanlab
+use_swanlab: true
+swanlab_project: llamafactory
+swanlab_run_name: internlm2-chat-7b
