@@ -2,8 +2,8 @@
 # For faster inference, we recommend to use `scripts/vllm_infer.py`.
 
 ### model
-model_name_or_path: /home/quanzhong/internlm2-chat-7b
-adapter_name_or_path: saves/internlm2-chat-7b/1_4/train
+model_name_or_path: /home/quanzhong/paligemma2-3b-pt-448
+adapter_name_or_path: saves/paligemma2-3b-pt-448/1_9/train
 trust_remote_code: true
 
 ### method
@@ -17,16 +17,16 @@ top_p: 0.7
 
 ### dataset
 dataset_dir: data
-eval_dataset: new_test
-template: intern2
-cutoff_len: 2048
+eval_dataset: tongue_test
+template: paligemma
+cutoff_len: 4096
 max_new_tokens: 2048
 max_samples: 10000
 # overwrite_cache: true
 preprocessing_num_workers: 16
 
 ### output
-output_dir: saves/internlm2-chat-7b/1_4/test
+output_dir: saves/paligemma2-3b-pt-448/1_9/test
 # overwrite_output_dir: true
 
 ### eval

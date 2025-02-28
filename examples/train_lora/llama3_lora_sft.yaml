@@ -1,5 +1,5 @@
 ### model
-model_name_or_path: /home/quanzhong/internlm2-chat-7b
+model_name_or_path: /home/quanzhong/paligemma-3b-pt-448
 trust_remote_code: true
 
 ### method
@@ -15,15 +15,15 @@ max_grad_norm: 1.0
 
 ### dataset
 dataset_dir: data
-dataset: my_train
-template: intern2
+dataset: tongue_train
+template: paligemma
 cutoff_len: 2048
 max_samples: 10000
 overwrite_cache: true
 preprocessing_num_workers: 16
 
 ### output
-output_dir: saves/internlm2-chat-7b/1_4/train
+output_dir: saves/paligemma-3b-pt-448/1_9/train
 logging_steps: 5
 save_steps: 100
 plot_loss: true
@@ -34,12 +34,13 @@ report_to: all
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 2
 learning_rate: 5.0e-5
-num_train_epochs: 5.0
+num_train_epochs: 5
 lr_scheduler_type: cosine
-warmup_steps: 10
+warmup_steps: 0
 bf16: true
 ddp_timeout: 180000000
 optim: adamw_torch
+# deepspeed: examples/deepspeed/ds_z3_config.json
 
 ### eval
 # val_size: 0.1
@@ -50,4 +51,4 @@ optim: adamw_torch
 ### swanlab
 use_swanlab: true
 swanlab_project: llamafactory
-swanlab_run_name: internlm2-chat-7b
+swanlab_run_name: paligemma-3b-pt-448

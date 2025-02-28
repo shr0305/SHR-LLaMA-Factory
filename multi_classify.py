@@ -175,8 +175,8 @@ Jaccard 相似度 (Jaccard Score): {jaccard:.4f}
 def main():
     # 文件路径设置/media/ubuntu/shr/SHR-LLaMA-Factory/saves/llava-next-mistral-7b/12_27/test/generated_predictions.jsonl
     true_labels_excel = './test_output.xlsx'  # 替换为您的真实标签 Excel 文件路径
-    pred_labels_json = './saves/llava-next-mistral-7b/12_27/test/generated_predictions.jsonl'  # 替换为您的预测标签 JSON 文件路径
-    output_directory = './saves/llava-next-mistral-7b/12_27/test/'  # 请确保该目录存在或将其创建
+    pred_labels_json = './saves/paligemma2-3b-pt-448/1_9/test/generated_predictions.jsonl'  # 替换为您的预测标签 JSON 文件路径
+    output_directory = './saves/paligemma2-3b-pt-448/1_9/test/'  # 请确保该目录存在或将其创建
 
     # 读取真实标签
     Y_true = load_true_labels_from_excel(true_labels_excel, all_classes)
