@@ -32,7 +32,7 @@ from transformers.utils import is_torch_bf16_gpu_available, is_torch_npu_availab
 
 from ..extras import logging
 from ..extras.constants import CHECKPOINT_NAMES
-from ..extras.misc import check_dependencies, check_version, get_current_device
+from ..extras.misc import check_dependencies, check_version, get_current_device, is_env_enabled
 from .data_args import DataArguments
 from .evaluation_args import EvaluationArguments
 from .finetuning_args import FinetuningArguments
@@ -55,6 +55,9 @@ _EVAL_CLS = Tuple[ModelArguments, DataArguments, EvaluationArguments, Finetuning
 
 
 def read_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> Union[Dict[str, Any], List[str]]:
+    r"""
+    Gets arguments from the command line or a config file.
+    """
     if args is not None:
         return args
 
@@ -80,13 +83,14 @@ def _parse_args(
         print(f"Got unknown args, potentially deprecated arguments: {unknown_args}")
         raise ValueError(f"Some specified arguments are not used by the HfArgumentParser: {unknown_args}")
 
-    return (*parsed_args,)
+    return tuple(parsed_args)
 
 
 def _set_transformers_logging() -> None:
-    transformers.utils.logging.set_verbosity_info()
-    transformers.utils.logging.enable_default_handler()
-    transformers.utils.logging.enable_explicit_format()
+    if os.getenv("LLAMAFACTORY_VERBOSITY", "INFO") in ["DEBUG", "INFO"]:
+        transformers.utils.logging.set_verbosity_info()
+        transformers.utils.logging.enable_default_handler()
+        transformers.utils.logging.enable_explicit_format()
 
 
 def _verify_model_args(
@@ -133,11 +137,14 @@ def _check_extra_dependencies(
         check_version("mixture-of-depth>=1.1.6", mandatory=True)
 
     if model_args.infer_backend == "vllm":
-        check_version("vllm>=0.4.3,<0.6.7")
+        check_version("vllm>=0.4.3,<=0.7.2")
         check_version("vllm", mandatory=True)
 
     if finetuning_args.use_galore:
         check_version("galore_torch", mandatory=True)
+
+    if finetuning_args.use_apollo:
+        check_version("apollo_torch", mandatory=True)
 
     if finetuning_args.use_badam:
         check_version("badam>=1.2.1", mandatory=True)
@@ -156,17 +163,20 @@ def _check_extra_dependencies(
 
 def _parse_train_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _TRAIN_CLS:
     parser = HfArgumentParser(_TRAIN_ARGS)
-    return _parse_args(parser, args)
+    allow_extra_keys = is_env_enabled("ALLOW_EXTRA_ARGS")
+    return _parse_args(parser, args, allow_extra_keys=allow_extra_keys)
 
 
 def _parse_infer_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _INFER_CLS:
     parser = HfArgumentParser(_INFER_ARGS)
-    return _parse_args(parser, args)
+    allow_extra_keys = is_env_enabled("ALLOW_EXTRA_ARGS")
+    return _parse_args(parser, args, allow_extra_keys=allow_extra_keys)
 
 
 def _parse_eval_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _EVAL_CLS:
     parser = HfArgumentParser(_EVAL_ARGS)
-    return _parse_args(parser, args)
+    allow_extra_keys = is_env_enabled("ALLOW_EXTRA_ARGS")
+    return _parse_args(parser, args, allow_extra_keys=allow_extra_keys)
 
 
 def get_ray_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> RayArguments:
@@ -183,9 +193,6 @@ def get_train_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _
         _set_transformers_logging()
 
     # Check arguments
-    if finetuning_args.stage != "pt" and data_args.template is None:
-        raise ValueError("Please specify which `template` to use.")
-
     if finetuning_args.stage != "sft":
         if training_args.predict_with_generate:
             raise ValueError("`predict_with_generate` cannot be set as True except SFT.")
@@ -255,21 +262,21 @@ def get_train_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _
         if is_deepspeed_zero3_enabled():
             raise ValueError("`pure_bf16` is incompatible with DeepSpeed ZeRO-3.")
 
-    if (
-        finetuning_args.use_galore
-        and finetuning_args.galore_layerwise
-        and training_args.parallel_mode == ParallelMode.DISTRIBUTED
-    ):
-        raise ValueError("Distributed training does not support layer-wise GaLore.")
+    if training_args.parallel_mode == ParallelMode.DISTRIBUTED:
+        if finetuning_args.use_galore and finetuning_args.galore_layerwise:
+            raise ValueError("Distributed training does not support layer-wise GaLore.")
 
-    if finetuning_args.use_badam and training_args.parallel_mode == ParallelMode.DISTRIBUTED:
-        if finetuning_args.badam_mode == "ratio":
-            raise ValueError("Radio-based BAdam does not yet support distributed training, use layer-wise BAdam.")
-        elif not is_deepspeed_zero3_enabled():
-            raise ValueError("Layer-wise BAdam only supports DeepSpeed ZeRO-3 training.")
+        if finetuning_args.use_apollo and finetuning_args.apollo_layerwise:
+            raise ValueError("Distributed training does not support layer-wise APOLLO.")
 
-    if finetuning_args.use_galore and training_args.deepspeed is not None:
-        raise ValueError("GaLore is incompatible with DeepSpeed yet.")
+        if finetuning_args.use_badam:
+            if finetuning_args.badam_mode == "ratio":
+                raise ValueError("Radio-based BAdam does not yet support distributed training, use layer-wise BAdam.")
+            elif not is_deepspeed_zero3_enabled():
+                raise ValueError("Layer-wise BAdam only supports DeepSpeed ZeRO-3 training.")
+
+    if training_args.deepspeed is not None and (finetuning_args.use_galore or finetuning_args.use_apollo):
+        raise ValueError("GaLore and APOLLO are incompatible with DeepSpeed yet.")
 
     if model_args.infer_backend == "vllm":
         raise ValueError("vLLM backend is only available for API, CLI and Web.")
@@ -301,9 +308,13 @@ def get_train_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _
     if training_args.do_train and (not training_args.fp16) and (not training_args.bf16):
         logger.warning_rank0("We recommend enable mixed precision training.")
 
-    if training_args.do_train and finetuning_args.use_galore and not finetuning_args.pure_bf16:
+    if (
+        training_args.do_train
+        and (finetuning_args.use_galore or finetuning_args.use_apollo)
+        and not finetuning_args.pure_bf16
+    ):
         logger.warning_rank0(
-            "Using GaLore with mixed precision training may significantly increases GPU memory usage."
+            "Using GaLore or APOLLO with mixed precision training may significantly increases GPU memory usage."
         )
 
     if (not training_args.do_train) and model_args.quantization_bit is not None:
@@ -379,7 +390,6 @@ def get_train_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _
             str(model_args.compute_dtype),
         )
     )
-
     transformers.set_seed(training_args.seed)
 
     return model_args, data_args, training_args, finetuning_args, generating_args
@@ -389,9 +399,6 @@ def get_infer_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _
     model_args, data_args, finetuning_args, generating_args = _parse_infer_args(args)
 
     _set_transformers_logging()
-
-    if data_args.template is None:
-        raise ValueError("Please specify which `template` to use.")
 
     if model_args.infer_backend == "vllm":
         if finetuning_args.stage != "sft":
@@ -422,9 +429,6 @@ def get_eval_args(args: Optional[Union[Dict[str, Any], List[str]]] = None) -> _E
     model_args, data_args, eval_args, finetuning_args = _parse_eval_args(args)
 
     _set_transformers_logging()
-
-    if data_args.template is None:
-        raise ValueError("Please specify which `template` to use.")
 
     if model_args.infer_backend == "vllm":
         raise ValueError("vLLM backend is only available for API, CLI and Web.")
