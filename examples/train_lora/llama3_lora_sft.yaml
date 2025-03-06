@@ -21,6 +21,7 @@ cutoff_len: 2048
 max_samples: 10000
 overwrite_cache: true
 preprocessing_num_workers: 16
+dataloader_num_workers: 4
 
 ### output
 output_dir: saves/paligemma-3b-pt-448/1_9/train
@@ -28,7 +29,11 @@ logging_steps: 5
 save_steps: 100
 plot_loss: true
 overwrite_output_dir: true
+<<<<<<< HEAD
 report_to: all
+=======
+save_only_model: false
+>>>>>>> main
 
 ### train
 per_device_train_batch_size: 1
@@ -39,8 +44,12 @@ lr_scheduler_type: cosine
 warmup_steps: 0
 bf16: true
 ddp_timeout: 180000000
+<<<<<<< HEAD
 optim: adamw_torch
 # deepspeed: examples/deepspeed/ds_z3_config.json
+=======
+resume_from_checkpoint: null
+>>>>>>> main
 
 ### eval
 val_size: 0.1
