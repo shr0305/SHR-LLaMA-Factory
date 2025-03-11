@@ -5,7 +5,7 @@
 [![GitHub contributors](https://img.shields.io/github/contributors/hiyouga/LLaMA-Factory?color=orange)](https://github.com/hiyouga/LLaMA-Factory/graphs/contributors)
 [![GitHub workflow](https://github.com/hiyouga/LLaMA-Factory/actions/workflows/tests.yml/badge.svg)](https://github.com/hiyouga/LLaMA-Factory/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/llamafactory)](https://pypi.org/project/llamafactory/)
-[![Citation](https://img.shields.io/badge/citation-341-green)](https://scholar.google.com/scholar?cites=12620864006390196564)
+[![Citation](https://img.shields.io/badge/citation-349-green)](https://scholar.google.com/scholar?cites=12620864006390196564)
 [![GitHub pull request](https://img.shields.io/badge/PRs-welcome-blue)](https://github.com/hiyouga/LLaMA-Factory/pulls)
 
 [![Twitter](https://img.shields.io/twitter/follow/llamafactory_ai)](https://twitter.com/llamafactory_ai)
@@ -403,7 +403,7 @@ huggingface-cli login
 | Optional     | Minimum | Recommend |
 | ------------ | ------- | --------- |
 | CUDA         | 11.6    | 12.2      |
-| deepspeed    | 0.10.0  | 0.16.2    |
+| deepspeed    | 0.10.0  | 0.16.4    |
 | bitsandbytes | 0.39.0  | 0.43.1    |
 | vllm         | 0.4.3   | 0.7.3     |
 | flash-attn   | 2.3.0   | 2.7.2     |
@@ -412,15 +412,14 @@ huggingface-cli login
 
 \* *estimated*
 
-| Method                   | Bits |   7B  |  13B  |  30B  |   70B  |  110B  |  8x7B |  8x22B |
-| ------------------------ | ---- | ----- | ----- | ----- | ------ | ------ | ----- | ------ |
-| Full                     |  32  | 120GB | 240GB | 600GB | 1200GB | 2000GB | 900GB | 2400GB |
-| Full                     |  16  |  60GB | 120GB | 300GB |  600GB |  900GB | 400GB | 1200GB |
-| Freeze                   |  16  |  20GB |  40GB |  80GB |  200GB |  360GB | 160GB |  400GB |
-| LoRA/GaLore/APOLLO/BAdam |  16  |  16GB |  32GB |  64GB |  160GB |  240GB | 120GB |  320GB |
-| QLoRA                    |   8  |  10GB |  20GB |  40GB |   80GB |  140GB |  60GB |  160GB |
-| QLoRA                    |   4  |   6GB |  12GB |  24GB |   48GB |   72GB |  30GB |   96GB |
-| QLoRA                    |   2  |   4GB |   8GB |  16GB |   24GB |   48GB |  18GB |   48GB |
+| Method                          | Bits |   7B  |  14B  |  30B  |   70B  |   `x`B  |
+| ------------------------------- | ---- | ----- | ----- | ----- | ------ | ------- |
+| Full (`bf16` or `fp16`)         |  32  | 120GB | 240GB | 600GB | 1200GB | `18x`GB |
+| Full (`pure_bf16`)              |  16  |  60GB | 120GB | 300GB |  600GB |  `8x`GB |
+| Freeze/LoRA/GaLore/APOLLO/BAdam |  16  |  16GB |  32GB |  64GB |  160GB |  `2x`GB |
+| QLoRA                           |   8  |  10GB |  20GB |  40GB |   80GB |   `x`GB |
+| QLoRA                           |   4  |   6GB |  12GB |  24GB |   48GB | `x/2`GB |
+| QLoRA                           |   2  |   4GB |   8GB |  16GB |   24GB | `x/4`GB |
 
 ## Getting Started
 
@@ -490,12 +489,12 @@ bash Ascend-cann-kernels-910b_8.0.0.alpha002_linux-"$(uname -i)".run --install
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 ```
 
-| Requirement  | Minimum | Recommend   |
-| ------------ | ------- | ----------- |
-| CANN         | 8.0.RC1 | 8.0.0.alpha002     |
-| torch        | 2.1.0   | 2.4.0      |
-| torch-npu    | 2.1.0   | 2.4.0.post2 |
-| deepspeed    | 0.13.2  | 0.16.2     |
+| Requirement  | Minimum | Recommend      |
+| ------------ | ------- | -------------- |
+| CANN         | 8.0.RC1 | 8.0.0.alpha002 |
+| torch        | 2.1.0   | 2.4.0          |
+| torch-npu    | 2.1.0   | 2.4.0.post2    |
+| deepspeed    | 0.13.2  | 0.13.2         |
 
 Remember to use `ASCEND_RT_VISIBLE_DEVICES` instead of `CUDA_VISIBLE_DEVICES` to specify the device to use.
 
@@ -560,6 +559,8 @@ See [examples/README.md](examples/README.md) for advanced usage (including distr
 
 > [!TIP]
 > Use `llamafactory-cli help` to show help information.
+>
+> Read [FAQs](https://github.com/hiyouga/LLaMA-Factory/issues/4614) first if you encounter any problems.
 
 ### Fine-Tuning with LLaMA Board GUI (powered by [Gradio](https://github.com/gradio-app/gradio))
 

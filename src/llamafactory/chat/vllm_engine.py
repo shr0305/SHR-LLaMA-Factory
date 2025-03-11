@@ -19,7 +19,7 @@ from typing_extensions import override
 
 from ..data import get_template_and_fix_tokenizer
 from ..extras import logging
-from ..extras.constants import AUDIO_PLACEHOLDER, IMAGE_PLACEHOLDER, VIDEO_PLACEHOLDER
+from ..extras.constants import AUDIO_PLACEHOLDER, IMAGE_PLACEHOLDER, VIDEO_PLACEHOLDER, EngineName
 from ..extras.misc import get_device_count
 from ..extras.packages import is_vllm_available
 from ..model import load_config, load_tokenizer
@@ -49,6 +49,7 @@ class VllmEngine(BaseEngine):
         finetuning_args: "FinetuningArguments",
         generating_args: "GeneratingArguments",
     ) -> None:
+        self.name = EngineName.VLLM
         self.model_args = model_args
         config = load_config(model_args)  # may download model from ms hub
         if getattr(config, "quantization_config", None):  # gptq models should use float16
@@ -169,7 +170,7 @@ class VllmEngine(BaseEngine):
             or 1.0,  # repetition_penalty must > 0
             temperature=temperature if temperature is not None else self.generating_args["temperature"],
             top_p=(top_p if top_p is not None else self.generating_args["top_p"]) or 1.0,  # top_p must > 0
-            top_k=top_k if top_k is not None else self.generating_args["top_k"],
+            top_k=(top_k if top_k is not None else self.generating_args["top_k"]) or -1,  # top_k must > 0
             stop=stop,
             stop_token_ids=self.template.get_stop_token_ids(self.tokenizer),
             max_tokens=max_tokens,
