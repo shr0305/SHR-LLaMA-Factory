@@ -1,4 +1,12 @@
 {
+  "my_train1": {
+    "file_name": "my_train1.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "tools": "tools"
+    }
+  },
   "new_test": {
     "file_name": "new_test.json",
     "formatting": "sharegpt",
