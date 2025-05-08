@@ -1,4 +1,4 @@
-model_name_or_path: /home/tongue_web/outmodel/InternLM3-8B-Chat
+model_name_or_path: /home/tongue_web/outmodel/internlm2-chat-7b
 # adapter_name_or_path: saves/llama3-8b/lora/sft
 template: intern2
 infer_backend: vllm  # choices: [huggingface, vllm]
