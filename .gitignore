@@ -179,3 +179,4 @@ generated_predictions.jsonl
 
 data/data.zip
 data/tongue_data/
+predictions_score.json
