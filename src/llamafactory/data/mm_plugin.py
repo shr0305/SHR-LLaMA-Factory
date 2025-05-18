@@ -58,7 +58,18 @@ if is_transformers_version_greater_than("4.45.0"):
 
 
 if is_transformers_version_greater_than("4.49.0"):
-    from transformers.image_utils import make_batched_videos, make_flat_list_of_images
+    try:
+        from transformers.image_utils import make_batched_videos, make_flat_list_of_images
+    except ImportError:
+        try:
+            # If that fails, try importing from the new location
+            from transformers.video_utils import make_batched_videos
+            from transformers.image_utils import make_flat_list_of_images
+        except ImportError:
+            raise ImportError(
+                "Could not import make_batched_videos and make_flat_list_of_images. "
+                "In Transformers 4.52.0, make_batched_videos will be moved to transformers.video_utils."
+            )
 
 
 if TYPE_CHECKING:
@@ -655,8 +666,10 @@ class KimiVLPlugin(BasePlugin):
         self._validate_messages(messages, images, videos, audios)
         if self.expand_mm_tokens:
             mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+            image_grid_hws = mm_inputs.get("image_grid_hws", [])
+        else:
+            image_grid_hws = [None] * len(images)
 
-        image_grid_hws = mm_inputs.get("image_grid_hws", [])
         num_image_tokens = 0
         image_processor: BaseImageProcessor = getattr(processor, "image_processor")
         merge_length = math.prod(image_processor.merge_kernel_size)
