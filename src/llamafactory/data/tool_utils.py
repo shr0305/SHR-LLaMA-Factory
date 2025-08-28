@@ -38,8 +38,20 @@ DEFAULT_TOOL_PROMPT = (
 )
 
 GLM4_TOOL_PROMPT = (
-    "你是一个名为 ChatGLM 的人工智能助手。你是基于智谱AI训练的语言模型 GLM-4 模型开发的，"
-    "你的任务是针对用户的问题和要求提供适当的答复和支持。# 可用工具{tool_text}"
+    "你是一个名为 ChatGLM 的人工智能助手。你是基于智谱 AI 公司训练的语言模型 GLM-4 模型开发的，"
+    "你的任务是针对用户的问题和要求提供适当的答复和支持。\n\n# 可用工具{tool_text}"
+)
+
+GLM4_MOE_TOOL_PROMPT = (
+    "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\n"
+    "You are provided with function signatures within <tools></tools> XML tags:\n<tools>{tool_text}"
+    "\n</tools>\n\nFor each function call, output the function name and arguments within the following XML format:"
+    "\n<tool_call>{{function-name}}"
+    "\n<arg_key>{{arg-key-1}}</arg_key>"
+    "\n<arg_value>{{arg-value-1}}</arg_value>"
+    "\n<arg_key>{{arg-key-2}}</arg_key>"
+    "\n<arg_value>{{arg-value-2}}</arg_value>"
+    "\n...\n</tool_call>\n"
 )
 
 LLAMA3_TOOL_PROMPT = (
@@ -55,6 +67,15 @@ QWEN_TOOL_PROMPT = (
     "\n</tools>\n\nFor each function call, return a json object with function name and arguments within "
     """<tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, """
     """"arguments": <args-json-object>}}\n</tool_call>"""
+)
+
+SEED_TOOL_PROMPT = (
+    "system\nYou are Doubao, a helpful AI assistant. You may call one or more functions to assist with the user query."
+    "Tool List:\nYou are authorized to use the following tools (described in JSON Schema format). Before performing "
+    "any task, you must decide how to call them based on the descriptions and parameters of these tools.{tool_text}\n"
+    "工具调用请遵循如下格式:\n<seed:tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>value_1"
+    "</parameter>\n<parameter=example_parameter_2>This is the value for the second parameter\nthat can span\nmultiple "
+    "lines</parameter>\n</function>\n</seed:tool_call>\n"
 )
 
 
@@ -125,11 +146,7 @@ class DefaultToolUtils(ToolUtils):
     @override
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
-        function_text = ""
-        for name, arguments in functions:
-            function_text += f"Action: {name}\nAction Input: {arguments}\n"
-
-        return function_text
+        return "\n".join([f"Action: {name}\nAction Input: {arguments}" for name, arguments in functions])
 
     @override
     @staticmethod
@@ -210,23 +227,22 @@ class Llama3ToolUtils(ToolUtils):
     @override
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
-        if len(functions) > 1:
-            raise ValueError("Llama-3 does not support parallel functions.")
-
-        return f'{{"name": "{functions[0].name}", "parameters": {functions[0].arguments}}}'
+        function_objects = [{"name": name, "parameters": json.loads(arguments)} for name, arguments in functions]
+        return json.dumps(function_objects[0] if len(function_objects) == 1 else function_objects, ensure_ascii=False)
 
     @override
     @staticmethod
     def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
         try:
-            tool = json.loads(content.strip())
+            tools = json.loads(content.strip())
         except json.JSONDecodeError:
             return content
 
-        if "name" not in tool or "parameters" not in tool:
+        tools = [tools] if not isinstance(tools, list) else tools
+        try:
+            return [FunctionCall(tool["name"], json.dumps(tool["parameters"], ensure_ascii=False)) for tool in tools]
+        except KeyError:
             return content
-
-        return [FunctionCall(tool["name"], json.dumps(tool["parameters"], ensure_ascii=False))]
 
 
 class MistralToolUtils(ToolUtils):
@@ -244,11 +260,9 @@ class MistralToolUtils(ToolUtils):
     @override
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
-        function_texts = []
-        for name, arguments in functions:
-            function_texts.append(f'{{"name": "{name}", "arguments": {arguments}}}')
-
-        return "[" + ", ".join(function_texts) + "]"
+        return json.dumps(
+            [{"name": name, "arguments": json.loads(arguments)} for name, arguments in functions], ensure_ascii=False
+        )
 
     @override
     @staticmethod
@@ -258,17 +272,11 @@ class MistralToolUtils(ToolUtils):
         except json.JSONDecodeError:
             return content
 
-        if not isinstance(tools, list):
-            tools = [tools]
-
-        results = []
-        for tool in tools:
-            if "name" not in tool or "arguments" not in tool:
-                return content
-
-            results.append(FunctionCall(tool["name"], json.dumps(tool["arguments"], ensure_ascii=False)))
-
-        return results
+        tools = [tools] if not isinstance(tools, list) else tools
+        try:
+            return [FunctionCall(tool["name"], json.dumps(tool["arguments"], ensure_ascii=False)) for tool in tools]
+        except KeyError:
+            return content
 
 
 class QwenToolUtils(ToolUtils):
@@ -287,13 +295,11 @@ class QwenToolUtils(ToolUtils):
     @override
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
-        function_texts = []
-        for name, arguments in functions:
-            function_texts.append(
-                "<tool_call>\n" + f'{{"name": "{name}", "arguments": {arguments}}}' + "\n</tool_call>"
-            )
-
-        return "\n".join(function_texts)
+        function_texts = [
+            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            for name, arguments in functions
+        ]
+        return "\n".join([f"<tool_call>\n{text}\n</tool_call>" for text in function_texts])
 
     @override
     @staticmethod
@@ -318,12 +324,96 @@ class QwenToolUtils(ToolUtils):
         return results
 
 
+class GLM4MOEToolUtils(QwenToolUtils):
+    r"""GLM-4-MOE tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text = ""
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text += "\n" + json.dumps(wrapped_tool, ensure_ascii=False)
+
+        return GLM4_MOE_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_json = [
+            {"func_name": name, "func_key_values": json.loads(arguments)} for name, arguments in functions
+        ]
+        function_texts = []
+        for func in function_json:
+            prompt = "\n<tool_call>" + func["func_name"]
+            for key, value in func["func_key_values"].items():
+                prompt += "\n<arg_key>" + key + "</arg_key>"
+                if not isinstance(value, str):
+                    value = json.dumps(value, ensure_ascii=False)
+                prompt += "\n<arg_value>" + value + "</arg_value>"
+            function_texts.append(prompt)
+
+        return "\n".join(function_texts)
+
+
+class SeedToolUtils(ToolUtils):
+    r"""Seed tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        return SEED_TOOL_PROMPT.format(tool_text="\n" + json.dumps(tools, ensure_ascii=False))
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_json = [
+            {"func_name": name, "func_key_values": json.loads(arguments)} for name, arguments in functions
+        ]
+        function_texts = []
+        for func in function_json:
+            prompt = "\n<seed:tool_call>\n<function=" + func["func_name"]
+            for key, value in func["func_key_values"].items():
+                prompt += "\n<parameter=" + key + ">"
+                if not isinstance(value, str):
+                    value = json.dumps(value, ensure_ascii=False)
+                prompt += value + "</parameter>"
+            prompt += "\n</function>\n</seed:tool_call>"
+            function_texts.append(prompt)
+
+        return "\n".join(function_texts)
+
+    @override
+    @staticmethod
+    def tool_extractor(content: str) -> Union[str, list["FunctionCall"]]:
+        results = []
+        regex = re.compile(
+            r"<seed:tool_call>\s*<function=\s*([^\s<]+)\s*(.*?)\s*</function>\s*</seed:tool_call>", re.DOTALL
+        )
+        for func_name, params_block in re.findall(regex, content):
+            args_dict = {}
+            param_pattern = re.compile(r"<parameter=(.*?)>(.*?)</parameter>", re.DOTALL)
+            for key, raw_value in re.findall(param_pattern, params_block.strip()):
+                value = raw_value.strip()
+                try:
+                    parsed_value = json.loads(value)
+                except json.JSONDecodeError:
+                    parsed_value = raw_value
+                args_dict[key] = parsed_value
+
+            results.append(FunctionCall(func_name.strip(), json.dumps(args_dict, ensure_ascii=False)))
+
+        return results
+
+
 TOOLS = {
     "default": DefaultToolUtils(),
     "glm4": GLM4ToolUtils(),
     "llama3": Llama3ToolUtils(),
     "mistral": MistralToolUtils(),
     "qwen": QwenToolUtils(),
+    "glm4_moe": GLM4MOEToolUtils(),
+    "seed_oss": SeedToolUtils(),
 }
 
 

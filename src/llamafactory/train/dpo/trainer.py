@@ -78,8 +78,10 @@ class CustomDPOTrainer(DPOTrainer):
         self.beta = finetuning_args.pref_beta
         self.loss_type = finetuning_args.pref_loss
         self.ftx_gamma = finetuning_args.pref_ftx
+        self.bco_gemma = finetuning_args.pref_bco_weight
         self.label_smoothing = finetuning_args.dpo_label_smoothing
         self.simpo_gamma = finetuning_args.simpo_gamma
+        self.ld_alpha = finetuning_args.ld_alpha
 
         Trainer.__init__(self, model=model, **kwargs)
         self.model_accepts_loss_kwargs = False  # overwrite trainer's default behavior
@@ -107,6 +109,11 @@ class CustomDPOTrainer(DPOTrainer):
             self.accelerator.clip_grad_norm_ = MethodType(clip_grad_norm_old_version, self.accelerator)
             self.add_callback(BAdamCallback)
 
+        if self.bco_gemma >= 1e-6:
+            from trl.trainer import RunningMoments
+
+            self.running = RunningMoments(self.accelerator)
+
     @override
     def create_optimizer(self) -> "torch.optim.Optimizer":
         if self.optimizer is None:
@@ -121,11 +128,11 @@ class CustomDPOTrainer(DPOTrainer):
         return super().create_scheduler(num_training_steps, optimizer)
 
     @override
-    def _get_train_sampler(self) -> Optional["torch.utils.data.Sampler"]:
+    def _get_train_sampler(self, *args, **kwargs) -> Optional["torch.utils.data.Sampler"]:
         if self.finetuning_args.disable_shuffling:
             return torch.utils.data.SequentialSampler(self.train_dataset)
 
-        return super()._get_train_sampler()
+        return super()._get_train_sampler(*args, **kwargs)
 
     @override
     def get_batch_samples(self, *args, **kwargs):
@@ -150,6 +157,25 @@ class CustomDPOTrainer(DPOTrainer):
         simpo_loss = -F.logsigmoid(self.beta * logits)
         return simpo_loss
 
+    def bco_loss(
+        self,
+        chosen_logps: "torch.Tensor",
+        rejected_logps: "torch.Tensor",
+        reference_chosen_logps: "torch.Tensor",
+        reference_rejected_logps: "torch.Tensor",
+    ) -> "torch.Tensor":
+        chosen_logratios = chosen_logps - reference_chosen_logps
+        rejected_logratios = rejected_logps - reference_rejected_logps
+        chosen_rewards = self.beta * chosen_logratios
+        rejected_rewards = self.beta * rejected_logratios
+        rewards = torch.cat((chosen_rewards, rejected_rewards), 0).mean().detach()
+        self.running.update(rewards)  # update baseline
+        delta = self.running.mean
+        bco_loss = -F.logsigmoid((self.beta * chosen_logratios) - delta) - F.logsigmoid(
+            -(self.beta * rejected_logratios - delta)
+        )
+        return bco_loss
+
     def compute_preference_loss(
         self,
         policy_chosen_logps: "torch.Tensor",
@@ -173,11 +199,17 @@ class CustomDPOTrainer(DPOTrainer):
                 policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps
             )
 
+            if self.bco_gemma > 1e-6:
+                bco_losses = self.bco_loss(
+                    policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps
+                )
+                losses += bco_losses * self.bco_gemma
+
         return losses, chosen_rewards, rejected_rewards
 
     @override
     def concatenated_forward(
-        self, model: "PreTrainedModel", batch: dict[str, "torch.Tensor"]
+        self, model: "PreTrainedModel", batch: dict[str, "torch.Tensor"], is_ref_model: bool = False
     ) -> tuple["torch.Tensor", "torch.Tensor", "torch.Tensor", "torch.Tensor", "torch.Tensor"]:
         r"""Compute the sum log probabilities of the labels under given logits if loss_type is not IPO, ORPO or SimPO.
 
@@ -187,7 +219,9 @@ class CustomDPOTrainer(DPOTrainer):
             batch = nested_detach(batch, clone=True)  # avoid error
 
         all_logits: torch.Tensor = model(**batch, return_dict=True, use_cache=False).logits.to(torch.float32)
-        all_logps, valid_length = get_batch_logps(logits=all_logits, labels=batch["labels"])
+        all_logps, valid_length = get_batch_logps(
+            logits=all_logits, labels=batch["labels"], ld_alpha=(self.ld_alpha if not is_ref_model else None)
+        )
         if self.loss_type in ["ipo", "orpo", "simpo"]:
             all_logps = all_logps / valid_length
 
@@ -217,7 +251,9 @@ class CustomDPOTrainer(DPOTrainer):
             ref_context = nullcontext()
 
         with torch.no_grad(), ref_context:
-            reference_chosen_logps, reference_rejected_logps, *_ = self.concatenated_forward(ref_model, batch)
+            reference_chosen_logps, reference_rejected_logps, *_ = self.concatenated_forward(
+                ref_model, batch, is_ref_model=True
+            )
 
         return reference_chosen_logps, reference_rejected_logps
 
@@ -248,6 +284,9 @@ class CustomDPOTrainer(DPOTrainer):
         sft_loss = -policy_chosen_logps_avg
         if self.ftx_gamma > 1e-6:
             losses += self.ftx_gamma * sft_loss
+            if self.bco_gemma > 1e-6:
+                # re-weigthing for MPO
+                losses /= self.ftx_gamma + self.bco_gemma + 1.0
 
         prefix = "eval_" if train_eval == "eval" else ""
         metrics[f"{prefix}rewards/chosen"] = chosen_rewards.mean().item()
